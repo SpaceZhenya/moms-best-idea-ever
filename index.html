@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Портрет с автоматическим распознаванием тем</title>
+<title>Портрет с ИИ, управляющим словами</title>
 <style>
 body { font-family: sans-serif; margin: 2rem; }
 input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
@@ -10,7 +10,7 @@ input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
 </style>
 </head>
 <body>
-<h1>Портрет с автоматическим распознаванием тем</h1>
+<h1>Портрет с ИИ, управляющим словами</h1>
 
 <label>Выберите портрет:</label>
 <select id="portraitSelect"></select>
@@ -18,13 +18,10 @@ input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
 <button id="addPortrait">Добавить портрет</button>
 <button id="clearMemory">Очистить память</button><br>
 
-<label>Длина памяти: <input type="number" id="memoryLength" value="10" min="1" max="50"></label>
-<label>Вес контекста: <input type="number" id="contextWeight" value="2" min="1" max="5"></label><br>
-
 <textarea id="userInput" placeholder="Введите сообщение" rows="2" cols="50"></textarea><br>
 <button id="send">Отправить</button>
-<button id="train">Train (добавить в тему)</button>
-<input type="text" id="themeName" placeholder="Название темы (например, приветствия)"><br>
+<button id="train">Train (добавить в память ИИ)</button>
+<input type="text" id="themeName" placeholder="Название темы"><br>
 
 <div class="box">
   <strong>Диалог:</strong>
@@ -32,6 +29,7 @@ input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
 </div>
 
 <script>
+// Простая n-грамма для генерации
 class NGram {
   constructor(n=3){this.n=n;this.model={}}
   train(text){const t=text.split(/\s+/).filter(Boolean);for(let i=0;i<=t.length-this.n;i++){const k=t.slice(i,i+this.n-1).join("\u0001"),v=t[i+this.n-1];if(!this.model[k])this.model[k]={};this.model[k][v]=(this.model[k][v]||0)+1}}
@@ -39,115 +37,100 @@ class NGram {
 }
 function weightedChoice(d){const total=Object.values(d).reduce((a,b)=>a+b,0);let r=Math.random()*total;for(let [w,c] of Object.entries(d)){r-=c;if(r<=0)return w}return Object.keys(d)[0]}
 
+// Портреты и ИИ
 const portraits={},portraitSelect=document.getElementById("portraitSelect"),dialogBox=document.getElementById("dialog");
 
+// Обновление списка портретов
 function updatePortraitSelect(){
   portraitSelect.innerHTML="";
   Object.keys(portraits).forEach(name=>{
     const opt=document.createElement("option");
-    opt.value=name; opt.textContent=`${name} (тем: ${Object.keys(portraits[name].themes).length})`;
+    opt.value=name; opt.textContent=`${name} (тем: ${Object.keys(portraits[name].memory).length})`;
     portraitSelect.appendChild(opt);
   });
 }
 
+// Добавление портрета
 document.getElementById("addPortrait").onclick=()=>{
   const name=document.getElementById("newPortrait").value.trim();
   if(!name) return alert("Введите имя портрета");
   if(portraits[name]) return alert("Портрет уже существует");
-  portraits[name]={generator:new NGram(3), memory:[], themes:{}}; // themes = тематические группы
+  portraits[name]={memory:{}, generator:new NGram(3)};
   updatePortraitSelect();
   alert(`Портрет "${name}" добавлен`);
   document.getElementById("newPortrait").value="";
 };
 
-function findTheme(portrait, message){
-  const msgLower = message.toLowerCase();
-  for(const [theme, data] of Object.entries(portrait.themes)){
-    for(const phrase of data.phrases){
-      for(const kw of data.keywords){
-        if(msgLower.includes(kw.toLowerCase())){
-          return {theme, reply: phrase};
-        }
-      }
-    }
-  }
-  return null;
-}
-
+// Отправка сообщения
 document.getElementById("send").onclick=()=>{
   const userText=document.getElementById("userInput").value.trim();
   if(!userText) return;
   const portraitName=portraitSelect.value;
   if(!portraitName) return alert("Выберите портрет");
 
-  const memoryLength=parseInt(document.getElementById("memoryLength").value)||10;
-  const contextWeight=parseInt(document.getElementById("contextWeight").value)||2;
-
   appendDialog(`Вы: ${userText}`);
   const portrait=portraits[portraitName];
 
-  portrait.memory.push("Вы: "+userText);
-  if(portrait.memory.length>memoryLength) portrait.memory.shift();
-
-  let result=findTheme(portrait, userText);
+  // ИИ управляет словами
   let reply="";
-  if(result){
-    reply=result.reply;
-  } else {
+  // Проверяем темы
+  for(const theme in portrait.memory){
+    for(const phrase of portrait.memory[theme]){
+      if(userText.toLowerCase().includes(phrase.toLowerCase())){
+        reply=phrase; break;
+      }
+    }
+    if(reply) break;
+  }
+
+  if(!reply){
+    // Генератор ИИ
     const tempGen=new NGram(3);
     Object.keys(portrait.generator.model).forEach(k=>{tempGen.model[k]={...portrait.generator.model[k]}});
-    portrait.memory.forEach(msg=>{for(let i=0;i<contextWeight;i++) tempGen.train(msg)});
     reply=tempGen.generate();
   }
 
   appendDialog(`${portraitName}: ${reply}`);
   speak(reply);
 
-  portrait.memory.push(`${portraitName}: ${reply}`);
-  if(portrait.memory.length>memoryLength) portrait.memory.shift();
-
   document.getElementById("userInput").value="";
 };
 
-// Train: добавляем сообщение в тему с ключевыми словами
+// Train: добавляем фразу в память ИИ
 document.getElementById("train").onclick=()=>{
   const userText=document.getElementById("userInput").value.trim();
   const portraitName=portraitSelect.value;
   const themeName=document.getElementById("themeName").value.trim();
-  if(!userText) return alert("Введите сообщение для тренировки");
+  if(!userText) return alert("Введите сообщение для обучения");
   if(!portraitName) return alert("Выберите портрет");
   if(!themeName) return alert("Введите название темы");
 
   const portrait=portraits[portraitName];
-  if(!portrait.themes[themeName]) portrait.themes[themeName]={phrases: [], keywords: []};
-
-  // Добавляем фразу в тему
-  portrait.themes[themeName].phrases.push(userText);
-  // Добавляем ключевые слова автоматически
-  userText.split(/\s+/).forEach(word=>{
-    if(!portrait.themes[themeName].keywords.includes(word.toLowerCase())) portrait.themes[themeName].keywords.push(word.toLowerCase());
-  });
-
-  // Также добавляем в генератор
+  if(!portrait.memory[themeName]) portrait.memory[themeName]=[];
+  portrait.memory[themeName].push(userText);
   portrait.generator.train(userText);
 
   updatePortraitSelect();
-  alert(`Сообщение добавлено в тему "${themeName}" с ключевыми словами`);
+  alert(`Сообщение добавлено в память ИИ в тему "${themeName}"`);
   document.getElementById("userInput").value="";
 };
 
+// Очистка памяти
 document.getElementById("clearMemory").onclick=()=>{
   const portraitName=portraitSelect.value;
   if(!portraitName) return alert("Выберите портрет");
-  portraits[portraitName].memory=[];
-  alert("Память диалога очищена");
+  portraits[portraitName].memory={};
+  portraits[portraitName].generator=new NGram(3);
+  alert("Память портрета очищена");
 };
 
+// Вывод диалога
 function appendDialog(text){
   dialogBox.innerHTML+=`<div>${text}</div>`;
   dialogBox.scrollTop=dialogBox.scrollHeight;
 }
 
+// Голос портрета
 function speak(text){
   if(!window.speechSynthesis) return;
   const utter=new SpeechSynthesisUtterance(text);
