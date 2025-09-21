@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Портрет-диалог с контекстом</title>
+<title>Портрет-диалог без файлов</title>
 <style>
 body { font-family: sans-serif; margin: 2rem; }
 input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
@@ -10,18 +10,20 @@ input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
 </style>
 </head>
 <body>
-<h1>Портрет-диалог — контекстные ответы</h1>
+<h1>Портрет-диалог — без файлов, обучение в реальном времени</h1>
 
 <label>Выберите портрет:</label>
-<select id="portraitSelect"></select><br>
-
-<input type="file" id="fileInput" accept=".txt">
-<input type="text" id="portraitName" placeholder="Имя портрета">
-<button id="loadFile">Загрузить файл</button>
+<select id="portraitSelect"></select>
+<input type="text" id="newPortrait" placeholder="Имя нового портрета">
+<button id="addPortrait">Добавить портрет</button>
 <button id="clearMemory">Очистить память</button><br>
+
+<label>Длина памяти: <input type="number" id="memoryLength" value="10" min="1" max="50"></label>
+<label>Вес контекста: <input type="number" id="contextWeight" value="2" min="1" max="5"></label><br>
 
 <textarea id="userInput" placeholder="Введите сообщение" rows="2" cols="50"></textarea><br>
 <button id="send">Отправить</button>
+<button id="train">Добавить сообщение как пример портрета</button>
 
 <div class="box">
   <strong>Диалог:</strong>
@@ -38,31 +40,24 @@ function weightedChoice(d){const total=Object.values(d).reduce((a,b)=>a+b,0);let
 
 const portraits={},portraitSelect=document.getElementById("portraitSelect"),dialogBox=document.getElementById("dialog");
 
-document.getElementById("loadFile").onclick=()=>{
-  const fileInput=document.getElementById("fileInput");
-  const nameInput=document.getElementById("portraitName").value.trim();
-  if(!fileInput.files.length||!nameInput) return alert("Выберите файл и имя портрета");
-  const file=fileInput.files[0];
-  const reader=new FileReader();
-  reader.onload=()=>{
-    const lines=reader.result.split(/\r?\n/).filter(Boolean);
-    if(!portraits[nameInput]) portraits[nameInput]={generator:new NGram(3), samples:0, memory:[]};
-    lines.forEach(l=>portraits[nameInput].generator.train(l));
-    portraits[nameInput].samples+=lines.length;
-    updatePortraitSelect();
-    alert(`Портрет "${nameInput}" загружен с ${lines.length} строк.`);
-  };
-  reader.readAsText(file,"UTF-8");
-};
-
 function updatePortraitSelect(){
   portraitSelect.innerHTML="";
   Object.keys(portraits).forEach(name=>{
     const opt=document.createElement("option");
-    opt.value=name; opt.textContent=`${name} (${portraits[name].samples} строк)`;
+    opt.value=name; opt.textContent=`${name} (примеры: ${portraits[name].samples})`;
     portraitSelect.appendChild(opt);
   });
 }
+
+document.getElementById("addPortrait").onclick=()=>{
+  const name=document.getElementById("newPortrait").value.trim();
+  if(!name) return alert("Введите имя портрета");
+  if(portraits[name]) return alert("Портрет уже существует");
+  portraits[name]={generator:new NGram(3), samples:0, memory:[]};
+  updatePortraitSelect();
+  alert(`Портрет "${name}" добавлен`);
+  document.getElementById("newPortrait").value="";
+};
 
 document.getElementById("send").onclick=()=>{
   const userText=document.getElementById("userInput").value.trim();
@@ -70,27 +65,41 @@ document.getElementById("send").onclick=()=>{
   const portraitName=portraitSelect.value;
   if(!portraitName) return alert("Выберите портрет");
 
-  appendDialog(`Вы: ${userText}`);
+  const memoryLength=parseInt(document.getElementById("memoryLength").value)||10;
+  const contextWeight=parseInt(document.getElementById("contextWeight").value)||2;
 
+  appendDialog(`Вы: ${userText}`);
   const portrait=portraits[portraitName];
 
-  // Добавляем текущее сообщение в память
+  // Добавляем сообщение в память
   portrait.memory.push("Вы: "+userText);
-  if(portrait.memory.length>10) portrait.memory.shift();
+  if(portrait.memory.length>memoryLength) portrait.memory.shift();
 
-  // Создаем временный генератор, обученный на памяти + оригинальных примерах
-  const tempGen = new NGram(3);
+  // Генерация с учётом контекста
+  const tempGen=new NGram(3);
   Object.keys(portrait.generator.model).forEach(k=>{tempGen.model[k]={...portrait.generator.model[k]}});
 
-  portrait.memory.forEach(msg=>tempGen.train(msg));
+  portrait.memory.forEach(msg=>{for(let i=0;i<contextWeight;i++) tempGen.train(msg)});
 
   const reply=tempGen.generate();
   appendDialog(`${portraitName}: ${reply}`);
   speak(reply);
 
   portrait.memory.push(`${portraitName}: ${reply}`);
-  if(portrait.memory.length>10) portrait.memory.shift();
+  if(portrait.memory.length>memoryLength) portrait.memory.shift();
 
+  document.getElementById("userInput").value="";
+};
+
+document.getElementById("train").onclick=()=>{
+  const userText=document.getElementById("userInput").value.trim();
+  const portraitName=portraitSelect.value;
+  if(!userText) return alert("Введите сообщение для обучения");
+  if(!portraitName) return alert("Выберите портрет");
+  portraits[portraitName].generator.train(userText);
+  portraits[portraitName].samples++;
+  updatePortraitSelect();
+  alert(`Сообщение добавлено как пример для "${portraitName}"`);
   document.getElementById("userInput").value="";
 };
 
