@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Портрет с ИИ, управляющим словами</title>
+<title>Портрет с ИИ, сам выбирающим тему</title>
 <style>
 body { font-family: sans-serif; margin: 2rem; }
 input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
@@ -10,7 +10,7 @@ input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
 </style>
 </head>
 <body>
-<h1>Портрет с ИИ, управляющим словами</h1>
+<h1>Портрет с ИИ, сам выбирающим тему</h1>
 
 <label>Выберите портрет:</label>
 <select id="portraitSelect"></select>
@@ -20,8 +20,7 @@ input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
 
 <textarea id="userInput" placeholder="Введите сообщение" rows="2" cols="50"></textarea><br>
 <button id="send">Отправить</button>
-<button id="train">Train (добавить в память ИИ)</button>
-<input type="text" id="themeName" placeholder="Название темы"><br>
+<button id="train">Train (добавить в память)</button><br>
 
 <div class="box">
   <strong>Диалог:</strong>
@@ -29,7 +28,6 @@ input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
 </div>
 
 <script>
-// Простая n-грамма для генерации
 class NGram {
   constructor(n=3){this.n=n;this.model={}}
   train(text){const t=text.split(/\s+/).filter(Boolean);for(let i=0;i<=t.length-this.n;i++){const k=t.slice(i,i+this.n-1).join("\u0001"),v=t[i+this.n-1];if(!this.model[k])this.model[k]={};this.model[k][v]=(this.model[k][v]||0)+1}}
@@ -37,7 +35,6 @@ class NGram {
 }
 function weightedChoice(d){const total=Object.values(d).reduce((a,b)=>a+b,0);let r=Math.random()*total;for(let [w,c] of Object.entries(d)){r-=c;if(r<=0)return w}return Object.keys(d)[0]}
 
-// Портреты и ИИ
 const portraits={},portraitSelect=document.getElementById("portraitSelect"),dialogBox=document.getElementById("dialog");
 
 // Обновление списка портретов
@@ -61,6 +58,25 @@ document.getElementById("addPortrait").onclick=()=>{
   document.getElementById("newPortrait").value="";
 };
 
+// Функция ИИ для определения темы
+function detectTheme(portrait, message){
+  const msgWords = message.toLowerCase().split(/\s+/);
+  let bestMatch = null;
+  let maxOverlap = 0;
+
+  for(const [theme, phrases] of Object.entries(portrait.memory)){
+    for(const phrase of phrases){
+      const phraseWords = phrase.toLowerCase().split(/\s+/);
+      const overlap = phraseWords.filter(w => msgWords.includes(w)).length;
+      if(overlap > maxOverlap){
+        maxOverlap = overlap;
+        bestMatch = theme;
+      }
+    }
+  }
+  return bestMatch || "новая_тема_" + Object.keys(portrait.memory).length;
+}
+
 // Отправка сообщения
 document.getElementById("send").onclick=()=>{
   const userText=document.getElementById("userInput").value.trim();
@@ -71,20 +87,15 @@ document.getElementById("send").onclick=()=>{
   appendDialog(`Вы: ${userText}`);
   const portrait=portraits[portraitName];
 
-  // ИИ управляет словами
-  let reply="";
-  // Проверяем темы
-  for(const theme in portrait.memory){
-    for(const phrase of portrait.memory[theme]){
-      if(userText.toLowerCase().includes(phrase.toLowerCase())){
-        reply=phrase; break;
-      }
-    }
-    if(reply) break;
-  }
+  // ИИ сам выбирает тему
+  const theme = detectTheme(portrait, userText);
+  if(!portrait.memory[theme]) portrait.memory[theme]=[];
+
+  // Ищем подходящую фразу
+  let reply = portrait.memory[theme].length>0 ? portrait.memory[theme][Math.floor(Math.random()*portrait.memory[theme].length)] : null;
 
   if(!reply){
-    // Генератор ИИ
+    // Генерация ИИ
     const tempGen=new NGram(3);
     Object.keys(portrait.generator.model).forEach(k=>{tempGen.model[k]={...portrait.generator.model[k]}});
     reply=tempGen.generate();
@@ -96,22 +107,21 @@ document.getElementById("send").onclick=()=>{
   document.getElementById("userInput").value="";
 };
 
-// Train: добавляем фразу в память ИИ
+// Train: добавляем фразу в память, ИИ сам определяет тему
 document.getElementById("train").onclick=()=>{
   const userText=document.getElementById("userInput").value.trim();
   const portraitName=portraitSelect.value;
-  const themeName=document.getElementById("themeName").value.trim();
   if(!userText) return alert("Введите сообщение для обучения");
   if(!portraitName) return alert("Выберите портрет");
-  if(!themeName) return alert("Введите название темы");
 
   const portrait=portraits[portraitName];
-  if(!portrait.memory[themeName]) portrait.memory[themeName]=[];
-  portrait.memory[themeName].push(userText);
+  const theme = detectTheme(portrait, userText);
+  if(!portrait.memory[theme]) portrait.memory[theme]=[];
+  portrait.memory[theme].push(userText);
   portrait.generator.train(userText);
 
   updatePortraitSelect();
-  alert(`Сообщение добавлено в память ИИ в тему "${themeName}"`);
+  alert(`Сообщение добавлено в память ИИ в тему "${theme}"`);
   document.getElementById("userInput").value="";
 };
 
