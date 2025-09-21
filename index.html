@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Портрет-диалог без файлов</title>
+<title>Портрет-диалог с обучением</title>
 <style>
 body { font-family: sans-serif; margin: 2rem; }
 input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
@@ -10,7 +10,7 @@ input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
 </style>
 </head>
 <body>
-<h1>Портрет-диалог — без файлов, обучение в реальном времени</h1>
+<h1>Портрет-диалог с динамическим обучением</h1>
 
 <label>Выберите портрет:</label>
 <select id="portraitSelect"></select>
@@ -23,7 +23,7 @@ input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
 
 <textarea id="userInput" placeholder="Введите сообщение" rows="2" cols="50"></textarea><br>
 <button id="send">Отправить</button>
-<button id="train">Добавить сообщение как пример портрета</button>
+<button id="train">Train (запомнить пример)</button>
 
 <div class="box">
   <strong>Диалог:</strong>
@@ -53,7 +53,7 @@ document.getElementById("addPortrait").onclick=()=>{
   const name=document.getElementById("newPortrait").value.trim();
   if(!name) return alert("Введите имя портрета");
   if(portraits[name]) return alert("Портрет уже существует");
-  portraits[name]={generator:new NGram(3), samples:0, memory:[]};
+  portraits[name]={generator:new NGram(3), samples:0, memory:[], examples:[]};
   updatePortraitSelect();
   alert(`Портрет "${name}" добавлен`);
   document.getElementById("newPortrait").value="";
@@ -75,11 +75,15 @@ document.getElementById("send").onclick=()=>{
   portrait.memory.push("Вы: "+userText);
   if(portrait.memory.length>memoryLength) portrait.memory.shift();
 
-  // Генерация с учётом контекста
+  // Создаем временный генератор
   const tempGen=new NGram(3);
   Object.keys(portrait.generator.model).forEach(k=>{tempGen.model[k]={...portrait.generator.model[k]}});
 
+  // Добавляем память с весом
   portrait.memory.forEach(msg=>{for(let i=0;i<contextWeight;i++) tempGen.train(msg)});
+
+  // Добавляем выученные примеры (без повторного увеличения samples)
+  portrait.examples.forEach(example=>tempGen.train(example));
 
   const reply=tempGen.generate();
   appendDialog(`${portraitName}: ${reply}`);
@@ -91,15 +95,19 @@ document.getElementById("send").onclick=()=>{
   document.getElementById("userInput").value="";
 };
 
+// Train: запоминаем сообщение как пример портрета
 document.getElementById("train").onclick=()=>{
   const userText=document.getElementById("userInput").value.trim();
   const portraitName=portraitSelect.value;
-  if(!userText) return alert("Введите сообщение для обучения");
+  if(!userText) return alert("Введите сообщение для тренировки");
   if(!portraitName) return alert("Выберите портрет");
-  portraits[portraitName].generator.train(userText);
-  portraits[portraitName].samples++;
+
+  const portrait=portraits[portraitName];
+  portrait.generator.train(userText);
+  portrait.examples.push(userText);
+  portrait.samples++;
   updatePortraitSelect();
-  alert(`Сообщение добавлено как пример для "${portraitName}"`);
+  alert(`Сообщение запомнено для портрета "${portraitName}"`);
   document.getElementById("userInput").value="";
 };
 
