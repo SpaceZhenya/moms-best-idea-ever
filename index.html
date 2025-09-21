@@ -2,25 +2,25 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Автономный портрет с ИИ</title>
+<title>Автономный ИИ-Портрет без ключа</title>
 <style>
 body { font-family: sans-serif; margin: 2rem; }
-input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
-.box { background: #f9f9f9; padding: 1rem; margin-top: 1rem; border-radius: 8px; }
+textarea,input,button { margin:0.5rem 0; padding:0.5rem; }
+.box { background:#f9f9f9; padding:1rem; margin-top:1rem; border-radius:8px; }
 </style>
 </head>
 <body>
-<h1>Автономный портрет с ИИ</h1>
+<h1>ИИ-Портрет</h1>
 
-<label>Выберите портрет:</label>
+<label>Портрет:</label>
 <select id="portraitSelect"></select>
 <input type="text" id="newPortrait" placeholder="Имя нового портрета">
-<button id="addPortrait">Добавить портрет</button>
+<button id="addPortrait">Добавить</button>
 <button id="clearMemory">Очистить память</button><br>
 
 <textarea id="userInput" placeholder="Введите сообщение" rows="2" cols="50"></textarea><br>
 <button id="send">Отправить</button>
-<button id="train">Train (добавить в память)</button><br>
+<button id="train">Train</button><br>
 
 <div class="box">
   <strong>Диалог:</strong>
@@ -28,15 +28,53 @@ input, button, select, textarea { margin: 0.5rem 0; padding: 0.5rem; }
 </div>
 
 <script>
-// N-грамма для генерации
+// N-грамма для генерации текста
 class NGram {
-  constructor(n=3){this.n=n;this.model={}}
-  train(text){const t=text.split(/\s+/).filter(Boolean);for(let i=0;i<=t.length-this.n;i++){const k=t.slice(i,i+this.n-1).join("\u0001"),v=t[i+this.n-1];if(!this.model[k])this.model[k]={};this.model[k][v]=(this.model[k][v]||0)+1}}
-  generate(maxWords=40){const keys=Object.keys(this.model);if(!keys.length)return"Я пока не знаю, что сказать...";let key=keys[Math.floor(Math.random()*keys.length)];let words=key.split("\u0001");for(let i=0;i<maxWords;i++){const dist=this.model[key];if(!dist)break;const next=weightedChoice(dist);words.push(next);key=words.slice(words.length-this.n+1).join("\u0001")}return words.join(" ")}
+  constructor(n=2){this.n=n;this.model={}}
+  train(text){
+    const words=text.split(/\s+/);
+    for(let i=0;i<=words.length-this.n;i++){
+      const key=words.slice(i,i+this.n-1).join(' ');
+      const next=words[i+this.n-1];
+      if(!this.model[key]) this.model[key]={};
+      this.model[key][next]=(this.model[key][next]||0)+1;
+    }
+  }
+  generate(max=20){
+    const keys=Object.keys(this.model);
+    if(!keys.length) return "Я пока ничего не знаю...";
+    let key=keys[Math.floor(Math.random()*keys.length)];
+    const words=key.split(' ');
+    for(let i=0;i<max;i++){
+      const dist=this.model[key];
+      if(!dist) break;
+      const next=weightedChoice(dist);
+      words.push(next);
+      key=words.slice(words.length-this.n+1).join(' ');
+    }
+    return words.join(' ');
+  }
 }
-function weightedChoice(d){const total=Object.values(d).reduce((a,b)=>a+b,0);let r=Math.random()*total;for(let [w,c] of Object.entries(d)){r-=c;if(r<=0)return w}return Object.keys(d)[0]}
+function weightedChoice(d){
+  let sum=0;
+  Object.values(d).forEach(v=>sum+=v);
+  let r=Math.random()*sum;
+  for(let k in d){
+    r-=d[k];
+    if(r<=0) return k;
+  }
+  return Object.keys(d)[0];
+}
 
-// Портреты и ИИ
+// Базовые знания ИИ
+const defaultMemory = {
+  "приветствия":["Привет!","Здравствуйте!","Рад вас видеть!"],
+  "прощания":["До свидания!","Пока!","Увидимся!"],
+  "шутки":["Почему утка пересекла дорогу? Чтобы попасть на другую сторону!"],
+  "факты":["Солнце — это звезда.","Вода замерзает при 0°C."],
+  "советы":["Отдыхайте 7–8 часов в день.","Пейте больше воды."]
+};
+
 const portraits={},portraitSelect=document.getElementById("portraitSelect"),dialogBox=document.getElementById("dialog");
 
 // Обновление списка портретов
@@ -54,39 +92,35 @@ document.getElementById("addPortrait").onclick=()=>{
   const name=document.getElementById("newPortrait").value.trim();
   if(!name) return alert("Введите имя портрета");
   if(portraits[name]) return alert("Портрет уже существует");
-  portraits[name]={memory:{}, generator:new NGram(3)};
+  portraits[name]={memory:JSON.parse(JSON.stringify(defaultMemory)), generator:new NGram(2)};
+  // Обучаем генератор базовыми знаниями
+  Object.values(portraits[name].memory).flat().forEach(txt=>portraits[name].generator.train(txt));
   updatePortraitSelect();
   alert(`Портрет "${name}" добавлен`);
   document.getElementById("newPortrait").value="";
 };
 
-// Автономное решение ИИ
-function AIRespond(portrait, message){
-  const words = message.toLowerCase().split(/\s+/);
-
-  // 1. Найти тему с наибольшим пересечением слов
-  let bestTheme=null, maxOverlap=0;
-  for(const [theme, phrases] of Object.entries(portrait.memory)){
+// ИИ формирует ответ автономно
+function AIRespond(portrait,message){
+  const words=message.toLowerCase().split(/\s+/);
+  let bestTheme=null,maxOverlap=0;
+  for(const [theme,phrases] of Object.entries(portrait.memory)){
     for(const phrase of phrases){
-      const overlap = phrase.toLowerCase().split(/\s+/).filter(w => words.includes(w)).length;
-      if(overlap > maxOverlap){
-        maxOverlap = overlap;
-        bestTheme = theme;
-      }
+      const overlap = phrase.toLowerCase().split(/\s+/).filter(w=>words.includes(w)).length;
+      if(overlap>maxOverlap){ maxOverlap=overlap; bestTheme=theme; }
     }
   }
-  // 2. Если тема не найдена, создаём новую
-  const theme = bestTheme || "новая_тема_" + Object.keys(portrait.memory).length;
+  const theme=bestTheme || "новая_тема_"+Object.keys(portrait.memory).length;
   if(!portrait.memory[theme]) portrait.memory[theme]=[];
 
-  // 3. Если есть подходящая фраза в теме → выбрать случайно
+  // Сначала пользовательские фразы, потом базовые
   if(portrait.memory[theme].length>0){
     return portrait.memory[theme][Math.floor(Math.random()*portrait.memory[theme].length)];
   } else {
-    // 4. Иначе генерация через n-грамму
-    const tempGen = new NGram(3);
-    Object.keys(portrait.generator.model).forEach(k=>{tempGen.model[k]={...portrait.generator.model[k]}});
-    Object.values(portrait.memory).flat().forEach(msg=>tempGen.train(msg));
+    // Генерация
+    const tempGen=new NGram(2);
+    Object.keys(portrait.generator.model).forEach(k=>tempGen.model[k]={...portrait.generator.model[k]});
+    Object.values(portrait.memory).flat().forEach(txt=>tempGen.train(txt));
     return tempGen.generate();
   }
 }
@@ -95,46 +129,37 @@ function AIRespond(portrait, message){
 document.getElementById("send").onclick=()=>{
   const userText=document.getElementById("userInput").value.trim();
   if(!userText) return;
-  const portraitName=portraitSelect.value;
-  if(!portraitName) return alert("Выберите портрет");
-
+  const name=portraitSelect.value;
+  if(!name) return alert("Выберите портрет");
   appendDialog(`Вы: ${userText}`);
-  const portrait=portraits[portraitName];
-
-  const reply = AIRespond(portrait, userText);
-
-  appendDialog(`${portraitName}: ${reply}`);
+  const portrait=portraits[name];
+  const reply=AIRespond(portrait,userText);
+  appendDialog(`${name}: ${reply}`);
   speak(reply);
-
   document.getElementById("userInput").value="";
 };
 
-// Train: ИИ сам решает тему
+// Train — добавление новой фразы
 document.getElementById("train").onclick=()=>{
   const userText=document.getElementById("userInput").value.trim();
-  const portraitName=portraitSelect.value;
+  const name=portraitSelect.value;
   if(!userText) return alert("Введите сообщение для обучения");
-  if(!portraitName) return alert("Выберите портрет");
+  if(!name) return alert("Выберите портрет");
+  const portrait=portraits[name];
+  const words=userText.toLowerCase().split(/\s+/);
 
-  const portrait=portraits[portraitName];
-  const words = userText.toLowerCase().split(/\s+/);
-
-  // ИИ решает тему
-  let bestTheme=null, maxOverlap=0;
-  for(const [theme, phrases] of Object.entries(portrait.memory)){
+  // ИИ сам определяет тему
+  let bestTheme=null,maxOverlap=0;
+  for(const [theme,phrases] of Object.entries(portrait.memory)){
     for(const phrase of phrases){
-      const overlap = phrase.toLowerCase().split(/\s+/).filter(w => words.includes(w)).length;
-      if(overlap > maxOverlap){
-        maxOverlap = overlap;
-        bestTheme = theme;
-      }
+      const overlap = phrase.toLowerCase().split(/\s+/).filter(w=>words.includes(w)).length;
+      if(overlap>maxOverlap){ maxOverlap=overlap; bestTheme=theme; }
     }
   }
-  const theme = bestTheme || "новая_тема_" + Object.keys(portrait.memory).length;
+  const theme=bestTheme || "новая_тема_"+Object.keys(portrait.memory).length;
   if(!portrait.memory[theme]) portrait.memory[theme]=[];
   portrait.memory[theme].push(userText);
   portrait.generator.train(userText);
-
   updatePortraitSelect();
   alert(`Фраза добавлена в тему "${theme}"`);
   document.getElementById("userInput").value="";
@@ -142,10 +167,11 @@ document.getElementById("train").onclick=()=>{
 
 // Очистка памяти
 document.getElementById("clearMemory").onclick=()=>{
-  const portraitName=portraitSelect.value;
-  if(!portraitName) return alert("Выберите портрет");
-  portraits[portraitName].memory={};
-  portraits[portraitName].generator=new NGram(3);
+  const name=portraitSelect.value;
+  if(!name) return alert("Выберите портрет");
+  portraits[name].memory=JSON.parse(JSON.stringify(defaultMemory));
+  portraits[name].generator=new NGram(2);
+  Object.values(portraits[name].memory).flat().forEach(txt=>portraits[name].generator.train(txt));
   alert("Память портрета очищена");
 };
 
@@ -155,7 +181,7 @@ function appendDialog(text){
   dialogBox.scrollTop=dialogBox.scrollHeight;
 }
 
-// Голос портрета
+// Голос
 function speak(text){
   if(!window.speechSynthesis) return;
   const utter=new SpeechSynthesisUtterance(text);
